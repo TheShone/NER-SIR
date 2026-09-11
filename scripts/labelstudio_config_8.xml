@@ -1,0 +1,18 @@
+<!-- Label Studio config — 8 pravnih entiteta (shema NER4Legal_SRB).
+     Project → Settings → Labeling Interface → Code → nalepi ovo. -->
+<View>
+  <Labels name="label" toName="text">
+    <Label value="COURT" background="#1f77b4"/>
+    <Label value="DATE" background="#2ca02c"/>
+    <Label value="DECISION" background="#17becf"/>
+    <Label value="LAW" background="#d62728"/>
+    <Label value="MONEY" background="#bcbd22"/>
+    <Label value="OFFICIAL_GAZETTE" background="#9467bd"/>
+    <Label value="PERSON" background="#ff7f0e"/>
+    <Label value="REFERENCE" background="#8c564b"/>
+  </Labels>
+  <Text name="text" value="$text"/>
+  <View style="margin-top:8px; color:#888; font-size:12px">
+    <Text name="src" value="Izvor: $source_title  ($sl_glasnik)"/>
+  </View>
+</View>
