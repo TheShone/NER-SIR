@@ -1,51 +1,110 @@
-# NER u srpskoj legislativi promptovanjem LLM-ova — prilozi uz SIR rad
+# Ekstrakcija imenovanih entiteta u pravnim tekstovima na srpskom jeziku
 
-Autor: Nenad Pavlović · 2026.
+Istraživački (SIR) rad o препознавању именованих ентитета (NER) у српским правним
+текстовима **промптовањем великих језичких модела, без фино подешавања**.
+Пореде се инструкцијска и „мислећа" (thinking) варијанта модела **Qwen3** у две
+димензије (**4B** и **30B**), уз специјализовани фино подешен модел
+**NER4Legal_SRB** као референцу. Схема обухвата 8 типова правних ентитета
+(COURT, DATE, DECISION, LAW, MONEY, OFFICIAL_GAZETTE, PERSON, REFERENCE).
 
-Ovaj paket sadrži rad, anotirani skup podataka, izvorni kod i rezultate
-eksperimenta opisanog u radu „Ekstrakcija imenovanih entiteta u tekstovima na
-srpskom jeziku".
+> Менторско ограничење: ништа се не тренира/фино подешава — сви модели се
+> примењују искључиво кроз промптовање (осим референтног NER4Legal_SRB, који се
+> примењује готов, онакав какав је објављен).
 
-## Sadržaj paketa
+## Истраживачка питања
+1. Како се генеративни модели (промптовање) понашају у односу на специјализовани
+   фино подешен модел?
+2. Какав је утицај **врсте** модела — инструкцијски наспрам „мислећи"?
+3. Какав је утицај **величине** модела (4B наспрам 30B)?
 
+## Структура репозиторијума
 ```
-rad/            NER_SIR_rad.docx — rad
-dataset/        anotirani skup, splitovi i smernice za anotaciju
-  gold.jsonl              1.400 anotiranih rečenica (8 tipova entiteta)
-  test.jsonl             test skup (1.375 rečenica)
-  test_eval.jsonl        gušći podskup za „misleće" modele (452 rečenice)
-  fewshot.jsonl          25 few-shot primera (isključeni iz testa)
-  ANOTACIJA_smernice.md  smernice i shema 8 entiteta
-scripts/        izvorni kod (pipeline)
-rezultati/      predikcije svih sistema (pred_*.jsonl)
+.
+├── README.md                     # овај фајл
+├── NER_SIR_rad.docx / .pdf       # ЈЕДАН коначни рад (балансирана верзија)
+├── 01_pre_balansiranja/          # прва фаза (само легислатива, неуравнотежен скуп)
+│   ├── dataset/                  # gold.jsonl (1.400 реч.), test, test_eval, fewshot, смернице
+│   ├── rezultati/
+│   └── scripts/
+└── 02_posle_balansiranja/        # друга фаза (балансиран скуп правних текстова)
+    ├── dataset/                  # gold_seg.jsonl (ФИНАЛНИ, 2.375 реч.) + међукораци
+    ├── rezultati/                # rezultati.txt + pred/ (предикције свих 5 система)
+    ├── scripts/                  # комплетан pipeline (в. доле)
+    ├── figures/                  # графикони и дијаграми из рада
+    └── COLAB_UPUTSTVO.md         # упутство за покретање модела на Google Colab
 ```
 
-## Shema entiteta (8 tipova)
-COURT, DATE, DECISION, LAW, MONEY, OFFICIAL_GAZETTE, PERSON, REFERENCE.
+## Фаза 1 — пре балансирања
+Почетни скуп направљен је искључиво од **закона** (Кривични законик, ЗОО, Закон о
+раду, Устав, Закон о привредним друштвима): 1.400 реченица, 2.527 ентитета.
+Расподела је била **изразито неуравнотежена** (LAW 1.409 … PERSON 5; однос
+**282:1**), што чини F1 меру за ретке типове статистички непоузданом.
 
-## Okruženje
-Python 3.9 (arm64), zavisnosti: `requests`, `pypdf`, `python-docx`,
-`transformers`, `torch`. Generativni modeli pokretani preko alata Ollama.
+## Фаза 2 — после балансирања
+На основу менторске примедбе („**избалансирати скуп и поновити мерења да буду
+меродавна**") урађено је следеће:
 
-## Reprodukcija (redosled)
+1. **Проширење домена** са закона на шире правне текстове (уз менторско одобрење):
+   додате **одлуке Уставног суда** (COURT, DECISION, REFERENCE, DATE, PERSON) и
+   **кадровска решења Владе** (разноврсна лична имена — PERSON).
+2. **Циљана анотација** 352 нове реченице богате ретким типовима (полуаутоматско
+   предобележавање па ручна исправка у Label Studio).
+3. **Потискивање** (down-sampling) реченица које носе само доминантне типове
+   (LAW, OFFICIAL_GAZETTE).
+4. **Поновна сегментација** предугих реченица уз аутоматско премапирање ознака
+   (без поновне анотације).
 
-1. Prikupljanje i čišćenje teksta zakona:
-   `python scripts/fetch_clean.py --mode local --input-dir data/raw_legal --out data/out/legal_raw.jsonl`
-2. Filtriranje šuma i uzorkovanje:
-   `python scripts/filter_sample.py --in data/out/legal_raw.jsonl --out data/out/legal_clean.jsonl --target 100000`
-3. Poluautomatsko predobeležavanje (8 klasa, regex + bcms-bertic):
-   `python scripts/prelabel8.py --in data/out/legal_clean.jsonl --out data/out/tasks8_full.json`
-4. Formiranje radnog skupa i ručna anotacija (Label Studio, config `scripts/labelstudio_config_8.xml`):
-   `python scripts/sample_tasks.py --in data/out/tasks8_full.json --out data/out/tasks8.json`
-5. Konverzija anotacija u gold: `python scripts/convert_export.py --in <export.json> --out data/out/gold.jsonl`
-6. Podela na test/few-shot: `python scripts/split_gold.py --in data/out/gold.jsonl --fewshot data/out/fewshot.jsonl --test data/out/test.jsonl`
-7. Pokretanje modela:
-   - Qwen3 (instruct/thinking): `scripts/colab_run_all.py` (GPU) ili `scripts/run_qwen_ollama.py` (lokalno)
-   - NER4Legal_SRB (baseline): `python scripts/run_ner4legal.py --test data/out/test.jsonl --out data/out/pred_ner4legal.jsonl`
-8. Evaluacija (strogo + relaxed, po tipu):
-   `python scripts/evaluate.py --gold data/out/test_eval.jsonl --pred rezultati/pred_*.jsonl`
+Коначни скуп: **2.375 реченица, 3.289 ентитета**, однос најчешћег и најређег типа
+сведен са 282:1 на **≈3,5:1** (сви типови > 200 појава). Резултати се приказују и
+**микро** и **макро** просеком.
 
-## Napomena
-Sirovi tekstovi zakona (izvor: Pravno-informacioni sistem RS) nisu uključeni;
-prema Zakonu o autorskom i srodnim pravima (čl. 6) oni su van autorske zaštite
-i slobodno dostupni. Anotacije su licencirane pod CC BY-SA 4.0.
+### Коначни резултати (подскуп од 450 реченица, F1)
+| Систем | P | R | F1 строго | F1 ублаж. | макро F1 |
+|---|---|---|---|---|---|
+| Qwen3-4B инструкцијски | 0,54 | 0,35 | 0,423 | 0,535 | 0,411 |
+| Qwen3-4B мислећи | 0,78 | 0,36 | 0,491 | 0,567 | 0,500 |
+| **Qwen3-30B инструкцијски** | 0,64 | 0,47 | **0,540** | 0,633 | **0,521** |
+| Qwen3-30B мислећи | 0,87 | 0,21 | 0,335 | 0,362 | 0,321 |
+| NER4Legal_SRB | 0,54 | 0,38 | 0,445 | **0,749** | 0,392 |
+
+### Кључни налази
+- **Величина** приметно побољшава инструкцијске моделе (4B → 30B: 0,423 → 0,540).
+- **Мислећа** варијанта даје високу прецизност уз низак одзив; код 30B постаје
+  толико конзервативна (враћа празно за ~½ реченица) да укупна F1 опада.
+- **Подударност домена** је пресудна: NER4Legal, слаб на законима, на правним
+  текстовима сличним својим тренинг подацима (пресуде) постаје најбољи по
+  ублаженој метрици.
+- **DECISION** је тежак свим системима; промптовање је робусније преко типова,
+  али фино подешавање, када домен одговара, и даље надмашује промптовање.
+- Цена инференције: инструкцијски ≈0,9 s/реч, мислећи ≈60 s/реч (≈65×).
+
+## Репродукција (редослед скрипти, фаза 2)
+```bash
+# 1) прикупљање и чишћење текста
+python scripts/fetch_clean.py --mode local --input-dir data/raw_legal --out data/out/clean.jsonl
+# 2) полуаутоматско предобележавање (regex + bcms-bertic-ner)
+python scripts/prelabel8.py --in data/out/clean.jsonl --out data/out/tasks8.json --device mps
+# 3) избор нових реченица за анотацију + (после анотације) потискивање старог скупа
+python scripts/balance_sample.py --select    --in data/out/new_tasks8.json --out data/out/label_studio_new.json
+python scripts/balance_sample.py --subsample --in data/out/gold.jsonl       --out data/out/gold_trimmed.jsonl --cap-law 300 --cap-gazette 300
+# 4) конверзија Label Studio извоза → gold + спајање → ресегментација
+python scripts/convert_export.py --in export.json --out dataset/dopuna_gold.jsonl
+python scripts/resegment.py --in dataset/gold_balanced.jsonl --out dataset/gold_seg.jsonl
+# 5) поделе
+python scripts/split_gold.py --in dataset/gold_seg.jsonl --fewshot dataset/fewshot.jsonl --test dataset/test.jsonl --k 25
+python scripts/make_eval_subset.py --in dataset/test.jsonl --out dataset/test_eval.jsonl --target 450
+# 6) примена модела (Qwen3 на Colab — в. COLAB_UPUTSTVO.md; NER4Legal локално)
+python scripts/run_ner4legal.py --test dataset/test_eval.jsonl --out rezultati/pred/pred_ner4legal.jsonl --device mps
+# 7) евалуација (микро + макро) и графикони
+python scripts/evaluate.py --gold dataset/test_eval.jsonl --pred rezultati/pred/pred_*.jsonl
+python scripts/make_charts.py && python scripts/make_pipeline.py
+# 8) генерисање рада
+node scripts/generate_paper.js
+```
+
+## Подаци и лиценца
+Изворни текстови закона, судских одлука и службених аката **изузети су из
+ауторскоправне заштите** (Закон о ауторском и сродним правима, члан 6), па се
+слободно користе и објављују. Анотације су доступне под лиценцом **CC BY-SA 4.0**.
+Извори: Правно-информациони систем РС, база праксе Уставног суда РС, портал
+отворених података Владе РС.
